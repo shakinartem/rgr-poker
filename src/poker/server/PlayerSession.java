@@ -107,7 +107,7 @@ public final class PlayerSession implements Runnable, Closeable {
 
     private void handleJoin(Map<String, Object> message) {
         if (player != null) {
-            sendError("Player already joined");
+            sendError("Игрок уже подключен");
             return;
         }
         String requestedName = String.valueOf(message.getOrDefault("name", "")).trim();
@@ -124,7 +124,7 @@ public final class PlayerSession implements Runnable, Closeable {
 
     private void handleAction(Map<String, Object> message) {
         if (player == null) {
-            sendError("Join required");
+            sendError("Сначала нужно подключиться");
             return;
         }
         try {
@@ -132,7 +132,7 @@ public final class PlayerSession implements Runnable, Closeable {
             int amount = ((Number) message.getOrDefault("amount", 0)).intValue();
             actions.offer(new PlayerAction(actionType, amount));
         } catch (Exception exception) {
-            sendError("Invalid action");
+            sendError("Некорректное действие");
         }
     }
 

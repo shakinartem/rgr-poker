@@ -11,8 +11,8 @@ import java.awt.Component;
 import java.util.List;
 
 public final class SeatPanel extends JPanel {
-    private final JLabel nameLabel = new JLabel("Empty", SwingConstants.CENTER);
-    private final JLabel stackLabel = new JLabel("stack=0", SwingConstants.CENTER);
+    private final JLabel nameLabel = new JLabel("Пусто", SwingConstants.CENTER);
+    private final JLabel stackLabel = new JLabel("стек=0", SwingConstants.CENTER);
     private final JLabel stateLabel = new JLabel("-", SwingConstants.CENTER);
     private final JLabel firstCardLabel = createCardLabel();
     private final JLabel secondCardLabel = createCardLabel();
@@ -35,31 +35,32 @@ public final class SeatPanel extends JPanel {
         add(cardsPanel);
     }
 
-    public void render(String name, int stack, int roundBet, boolean folded, boolean allIn, boolean connected, boolean waiting, List<String> cards) {
+    public void render(String name, int stack, int roundBet, boolean folded, boolean allIn, boolean connected,
+                       boolean waiting, List<String> cards) {
         nameLabel.setText(name);
-        stackLabel.setText("stack=" + stack + " bet=" + roundBet);
+        stackLabel.setText("стек=" + stack + " ставка=" + roundBet);
         StringBuilder state = new StringBuilder();
         if (waiting) {
-            state.append("WAITING ");
+            state.append("ОЖИДАЕТ ");
         }
         if (folded) {
-            state.append("FOLDED ");
+            state.append("ПАС ");
         }
         if (allIn) {
-            state.append("ALL-IN ");
+            state.append("ВА-БАНК ");
         }
         if (!connected) {
-            state.append("OFFLINE ");
+            state.append("НЕ В СЕТИ ");
         }
-        stateLabel.setText(state.length() == 0 ? "ACTIVE" : state.toString().trim());
+        stateLabel.setText(state.length() == 0 ? "АКТИВЕН" : state.toString().trim());
         firstCardLabel.setIcon(resolve(cards, 0));
         secondCardLabel.setIcon(resolve(cards, 1));
-        boolean highlight = stateLabel.getText().contains("ACTIVE") && connected;
+        boolean highlight = stateLabel.getText().contains("АКТИВЕН") && connected;
         setBorder(BorderFactory.createLineBorder(highlight ? new Color(214, 183, 91) : new Color(76, 51, 26), 2));
     }
 
     public void clear() {
-        render("Empty", 0, 0, false, false, false, false, List.of());
+        render("Пусто", 0, 0, false, false, false, false, List.of());
     }
 
     private JLabel createCardLabel() {

@@ -25,10 +25,10 @@ public final class GameController {
                 transportConnected = true;
             }
             client.send(Map.of("type", Protocol.TYPE_JOIN, "name", name));
-            frame.appendStatus("Joining " + host + ":" + port);
+            frame.appendStatus("Подключение к " + host + ":" + port);
         } catch (IOException exception) {
             resetConnection();
-            frame.appendStatus("Connection failed: " + exception.getMessage());
+            frame.appendStatus("Ошибка подключения: " + exception.getMessage());
             frame.setConnectEnabled(true);
         }
     }
@@ -41,7 +41,7 @@ public final class GameController {
         try {
             client.send(payload);
         } catch (IOException exception) {
-            frame.appendStatus("Send failed: " + exception.getMessage());
+            frame.appendStatus("Ошибка отправки: " + exception.getMessage());
         }
     }
 
@@ -51,7 +51,7 @@ public final class GameController {
             switch (type) {
                 case Protocol.TYPE_JOIN_OK -> {
                     joined = true;
-                    frame.appendStatus("Joined as " + message.get("name"));
+                    frame.appendStatus("Вы вошли как " + message.get("name"));
                     frame.setConnectEnabled(false);
                 }
                 case Protocol.TYPE_JOIN_ERROR -> {
@@ -66,7 +66,7 @@ public final class GameController {
                 }
                 case Protocol.TYPE_INFO -> frame.appendStatus(String.valueOf(message.get("message")));
                 case Protocol.TYPE_STATE -> frame.renderState(message);
-                default -> frame.appendStatus("Unknown message: " + type);
+                default -> frame.appendStatus("Неизвестное сообщение: " + type);
             }
         });
     }

@@ -12,9 +12,12 @@ public final class HandEvaluator {
     private HandEvaluator() {
     }
 
-    public static HandRank evaluateSeven(List<Card> cards) {
-        if (cards.size() != 7) {
-            throw new IllegalArgumentException("Expected 7 cards");
+    public static HandRank evaluateBest(List<Card> cards) {
+        if (cards.size() < 5 || cards.size() > 7) {
+            throw new IllegalArgumentException("Expected 5 to 7 cards");
+        }
+        if (cards.size() == 5) {
+            return evaluateFive(cards);
         }
         HandRank best = null;
         for (int a = 0; a < cards.size() - 4; a++) {
@@ -33,6 +36,13 @@ public final class HandEvaluator {
             }
         }
         return best;
+    }
+
+    public static HandRank evaluateSeven(List<Card> cards) {
+        if (cards.size() != 7) {
+            throw new IllegalArgumentException("Expected 7 cards");
+        }
+        return evaluateBest(cards);
     }
 
     private static HandRank evaluateFive(List<Card> cards) {

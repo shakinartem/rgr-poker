@@ -29,26 +29,26 @@ public final class GameTable {
 
     public Player registerPlayer(PlayerSession session, String requestedName) {
         if (!NAME_PATTERN.matcher(requestedName).matches()) {
-            session.sendError("Name must match ^[a-zA-Z0-9_]{3,16}$");
+            session.sendError("Имя должно соответствовать шаблону ^[a-zA-Z0-9_]{3,16}$");
             return null;
         }
         long occupiedSeats = players.stream().filter(player -> player.session().isConnected()).count();
         if (occupiedSeats >= 4) {
-            session.send(Map.of("type", Protocol.TYPE_JOIN_ERROR, "message", "Table is full"));
+            session.send(Map.of("type", Protocol.TYPE_JOIN_ERROR, "message", "Стол уже заполнен"));
             return null;
         }
         boolean taken = players.stream().anyMatch(player -> player.name().equalsIgnoreCase(requestedName));
         if (taken) {
-            session.send(Map.of("type", Protocol.TYPE_JOIN_ERROR, "message", "Name already used"));
+            session.send(Map.of("type", Protocol.TYPE_JOIN_ERROR, "message", "Это имя уже занято"));
             return null;
         }
         Player player = new Player(requestedName, session);
         players.add(player);
         if (engine.stage() == GameStage.WAITING) {
-            log(player.name() + " joined the table");
+            log(player.name() + " присоединился к столу");
         } else {
-            log(player.name() + " joined and will wait for the next round");
-            session.sendInfo("A hand is already in progress. You will join on the next round.");
+            log(player.name() + " подключился и ждёт следующую раздачу");
+            session.sendInfo("Раздача уже идёт. Вы войдёте в следующую партию.");
         }
         broadcastState();
         return player;
@@ -61,7 +61,7 @@ public final class GameTable {
         }
         player.setSittingOut(true);
         player.setFolded(true);
-        log(player.name() + " disconnected");
+        log(player.name() + " отключился");
         broadcastState();
     }
 
@@ -98,6 +98,7 @@ public final class GameTable {
         payload.put("currentTurn", engine.currentTurnPlayer());
         payload.put("turnSecondsLeft", engine.turnSecondsLeft());
         payload.put("status", engine.statusText());
+        payload.put("currentCombo", engine.currentCombination(viewer));
         payload.put("community", engine.communityCardsSnapshot().stream().map(Card::code).toList());
         payload.put("raiseMin", engine.minimumRaiseTo(viewer));
         payload.put("raiseMax", engine.maximumRaiseTo(viewer));
@@ -172,7 +173,7 @@ public final class GameTable {
                 Thread.currentThread().interrupt();
                 return;
             } catch (Exception exception) {
-                log("Server error: " + exception.getMessage());
+                log("Ошибка сервера: " + exception.getMessage());
             }
         }
     }

@@ -11,10 +11,12 @@ import poker.common.Suit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public final class GameEngine {
@@ -30,10 +32,12 @@ public final class GameEngine {
     private int pot;
     private int currentBet;
     private int minRaise;
-    private String statusText = "Waiting for players";
+    private String statusText = "Ожидание игроков";
     private String currentTurnPlayer = "";
     private long turnDeadlineMillis;
     private final List<String> currentHandPlayers = new ArrayList<>();
+    private final Map<String, String> lastHandDescriptions = new LinkedHashMap<>();
+    private final Set<String> lastWinners = new HashSet<>();
     private final List<Card> deck = new ArrayList<>(52);
     private final List<Card> communityCards = new ArrayList<>(5);
 
@@ -45,7 +49,7 @@ public final class GameEngine {
         List<Player> players = table.activePlayersSnapshot();
         if (players.size() < 2) {
             stage = GameStage.WAITING;
-            statusText = "Waiting for at least 2 players";
+            statusText = "Ожидание минимум 2 игроков";
             currentTurnPlayer = "";
             turnDeadlineMillis = 0L;
             currentHandPlayers.clear();
@@ -55,7 +59,7 @@ public final class GameEngine {
 
         prepareRound(players);
         postBlinds(players);
-        broadcast("New round started");
+        broadcast("Началась новая раздача");
         table.broadcastState();
 
         if (!bettingRound(players, firstToActPreFlop(players))) {
@@ -78,7 +82,7 @@ public final class GameEngine {
         }
 
         stage = GameStage.SHOWDOWN;
-        statusText = "Showdown";
+        statusText = "Вскрытие";
         currentTurnPlayer = "";
         turnDeadlineMillis = 0L;
         finishShowdown(players);
@@ -130,6 +134,26 @@ public final class GameEngine {
         return currentHandPlayers.contains(player.name());
     }
 
+    public synchronized String lastHandDescription(Player player) {
+        return lastHandDescriptions.getOrDefault(player.name(), "");
+    }
+
+    public synchronized boolean isLastWinner(Player player) {
+        return lastWinners.contains(player.name());
+    }
+
+    public synchronized String currentCombination(Player player) {
+        if (!player.hasHoleCards()) {
+            return "";
+        }
+        List<Card> cards = new ArrayList<>(communityCards);
+        cards.addAll(player.holeCards());
+        if (cards.size() < 5) {
+            return "";
+        }
+        return translateRank(HandEvaluator.evaluateBest(cards).description());
+    }
+
     private void prepareRound(List<Player> players) {
         buildDeck();
         communityCards.clear();
@@ -138,10 +162,12 @@ public final class GameEngine {
         minRaise = BIG_BLIND;
         dealerIndex = (dealerIndex + 1) % players.size();
         stage = GameStage.PRE_FLOP;
-        statusText = "Pre-flop";
+        statusText = "Префлоп";
         currentTurnPlayer = "";
         turnDeadlineMillis = 0L;
         currentHandPlayers.clear();
+        lastHandDescriptions.clear();
+        lastWinners.clear();
         players.stream().map(Player::name).forEach(currentHandPlayers::add);
 
         for (Player player : players) {
@@ -195,7 +221,7 @@ public final class GameEngine {
             PlayerSession session = player.session();
             session.clearPendingActions();
             currentTurnPlayer = player.name();
-            statusText = "Turn: " + player.name();
+            statusText = "Ход игрока: " + player.name();
             turnDeadlineMillis = System.currentTimeMillis() + TURN_TIMEOUT_MS;
             table.broadcastState();
             PlayerSession.PlayerAction action;
@@ -208,7 +234,7 @@ public final class GameEngine {
 
             if (action == null) {
                 action = autoActionFor(player);
-                broadcast(player.name() + " timed out: " + action.type());
+                broadcast(player.name() + " не уложился по времени: " + action.type());
             }
 
             turnDeadlineMillis = 0L;
@@ -257,7 +283,7 @@ public final class GameEngine {
             case FOLD -> {
                 player.setFolded(true);
                 player.setActedThisRound(true);
-                broadcast(player.name() + " folds");
+                broadcast(player.name() + " сбросил карты");
                 return true;
             }
             case CHECK -> {
@@ -265,7 +291,7 @@ public final class GameEngine {
                     return false;
                 }
                 player.setActedThisRound(true);
-                broadcast(player.name() + " checks");
+                broadcast(player.name() + " сказал чек");
                 return true;
             }
             case CALL -> {
@@ -278,7 +304,7 @@ public final class GameEngine {
                 int added = player.bet(toCall);
                 pot += added;
                 player.setActedThisRound(true);
-                broadcast(player.name() + " calls " + added);
+                broadcast(player.name() + " уравнял " + added);
                 return true;
             }
             case ALL_IN -> {
@@ -295,7 +321,7 @@ public final class GameEngine {
                     minRaise = Math.max(minRaise, raiseAmount);
                     reopenBetting(players, player);
                 }
-                broadcast(player.name() + " goes all-in for " + (before + added));
+                broadcast(player.name() + " пошёл ва-банк на " + (before + added));
                 return true;
             }
             case RAISE -> {
@@ -314,7 +340,7 @@ public final class GameEngine {
                 minRaise = Math.max(BIG_BLIND, raiseAmount);
                 player.setActedThisRound(true);
                 reopenBetting(players, player);
-                broadcast(player.name() + " raises to " + currentBet);
+                broadcast(player.name() + " повысил до " + currentBet);
                 return true;
             }
             default -> {
@@ -341,7 +367,7 @@ public final class GameEngine {
         statusText = label;
         currentTurnPlayer = "";
         turnDeadlineMillis = 0L;
-        broadcast(label + ": " + communityCards.stream().map(Card::code).collect(Collectors.joining(" ")));
+        broadcast(translateStreet(label) + ": " + communityCards.stream().map(Card::code).collect(Collectors.joining(" ")));
         table.broadcastState();
     }
 
@@ -351,10 +377,11 @@ public final class GameEngine {
             return;
         }
         winner.setStack(winner.stack() + pot);
-        broadcast(winner.name() + " wins pot " + pot + " without showdown");
+        broadcast(winner.name() + " забрал банк " + pot + " без вскрытия");
+        lastWinners.add(winner.name());
         pot = 0;
         stage = GameStage.WAITING;
-        statusText = "Round finished";
+        statusText = "Раздача завершена";
         currentTurnPlayer = "";
         turnDeadlineMillis = 0L;
         currentHandPlayers.clear();
@@ -370,7 +397,9 @@ public final class GameEngine {
             cards.addAll(player.holeCards());
             HandRank rank = HandEvaluator.evaluateSeven(cards);
             ranks.put(player, rank);
-            broadcast(player.name() + ": " + rank.description());
+            String translated = translateRank(rank.description());
+            lastHandDescriptions.put(player.name(), translated);
+            broadcast(player.name() + ": " + translated);
         }
 
         List<PotSlice> slices = buildPotSlices(players);
@@ -387,14 +416,15 @@ public final class GameEngine {
                 Player winner = winners.get(i);
                 int payout = share + (i < remainder ? 1 : 0);
                 winner.setStack(winner.stack() + payout);
+                lastWinners.add(winner.name());
             }
             broadcast("Pot " + slice.amount() + " won by " +
                     winners.stream().map(Player::name).collect(Collectors.joining(", ")) +
-                    " with " + best.description());
+                    " с комбинацией " + translateRank(best.description()));
         }
         pot = 0;
         stage = GameStage.WAITING;
-        statusText = "Round finished";
+        statusText = "Раздача завершена";
         currentTurnPlayer = "";
         turnDeadlineMillis = 0L;
         currentHandPlayers.clear();
@@ -451,6 +481,31 @@ public final class GameEngine {
 
     private void broadcast(String message) {
         table.log(message);
+    }
+
+    private String translateStreet(String label) {
+        return switch (label) {
+            case "Flop" -> "Флоп";
+            case "Turn" -> "Тёрн";
+            case "River" -> "Ривер";
+            default -> label;
+        };
+    }
+
+    private String translateRank(String description) {
+        return switch (description) {
+            case "Royal Flush" -> "Роял-флеш";
+            case "Straight Flush" -> "Стрит-флеш";
+            case "Four of a Kind" -> "Каре";
+            case "Full House" -> "Фулл-хаус";
+            case "Flush" -> "Флеш";
+            case "Straight" -> "Стрит";
+            case "Three of a Kind" -> "Сет";
+            case "Two Pair" -> "Две пары";
+            case "One Pair" -> "Пара";
+            case "High Card" -> "Старшая карта";
+            default -> description;
+        };
     }
 
     private PlayerSession.PlayerAction waitForActionWithCountdown(PlayerSession session) throws InterruptedException {

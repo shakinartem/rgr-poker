@@ -20,6 +20,7 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.GridLayout;
 import java.awt.Insets;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,33 +28,48 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 public final class PokerClientFrame extends JFrame {
+    private static final String[] COMBINATION_ORDER = {
+            "Роял-флеш",
+            "Стрит-флеш",
+            "Каре",
+            "Фулл-хаус",
+            "Флеш",
+            "Стрит",
+            "Сет",
+            "Две пары",
+            "Пара",
+            "Старшая карта"
+    };
+
     private final JTextField hostField = new JTextField("127.0.0.1", 10);
     private final JTextField portField = new JTextField("5000", 5);
     private final JTextField nameField = new JTextField("Player1", 10);
-    private final JButton connectButton = new JButton("Connect");
+    private final JButton connectButton = new JButton("Подключиться");
 
-    private final JLabel stageLabel = new JLabel("Stage: WAITING");
-    private final JLabel potLabel = new JLabel("Pot: 0");
-    private final JLabel turnLabel = new JLabel("Turn: -");
-    private final JLabel timerLabel = new JLabel("Time left: 0 s");
-    private final JLabel statusLabel = new JLabel("Status: not connected");
+    private final JLabel stageLabel = new JLabel("Стадия: ожидание");
+    private final JLabel potLabel = new JLabel("Банк: 0");
+    private final JLabel turnLabel = new JLabel("Ход: -");
+    private final JLabel timerLabel = new JLabel("Осталось времени: 0 с");
+    private final JLabel statusLabel = new JLabel("Статус: не подключено");
     private final JPanel communityPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 8));
     private final SeatPanel[] seatPanels = {
             new SeatPanel(), new SeatPanel(), new SeatPanel(), new SeatPanel()
     };
     private final JTextArea logArea = new JTextArea();
 
-    private final JButton foldButton = new JButton("Fold");
-    private final JButton checkButton = new JButton("Check");
-    private final JButton callButton = new JButton("Call");
-    private final JButton raiseButton = new JButton("Raise");
-    private final JButton allInButton = new JButton("All-in");
+    private final JButton foldButton = new JButton("Пас");
+    private final JButton checkButton = new JButton("Чек");
+    private final JButton callButton = new JButton("Колл");
+    private final JButton raiseButton = new JButton("Рейз");
+    private final JButton allInButton = new JButton("Ва-банк");
+    private final JButton myCombinationButton = new JButton("Моя комбинация");
     private final JSpinner raiseSpinner = new JSpinner(new SpinnerNumberModel(40, 1, 10_000, 10));
 
     private final GameController controller;
+    private String currentCombination = "";
 
     public PokerClientFrame() {
-        super("Texas Hold'em Client");
+        super("Техасский Холдем");
         this.controller = new GameController(this);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLayout(new BorderLayout(10, 10));
@@ -73,11 +89,12 @@ public final class PokerClientFrame extends JFrame {
 
     @SuppressWarnings("unchecked")
     public void renderState(Map<String, Object> state) {
-        stageLabel.setText("Stage: " + state.get("stage"));
-        potLabel.setText("Pot: " + state.get("pot") + " | Current bet: " + state.get("currentBet"));
-        turnLabel.setText("Turn: " + state.get("currentTurn"));
-        timerLabel.setText("Time left: " + state.get("turnSecondsLeft") + " s");
-        statusLabel.setText("Status: " + state.get("status"));
+        stageLabel.setText("Стадия: " + translateStage(String.valueOf(state.get("stage"))));
+        potLabel.setText("Банк: " + state.get("pot") + " | Текущая ставка: " + state.get("currentBet"));
+        turnLabel.setText("Ход: " + state.get("currentTurn"));
+        timerLabel.setText("Осталось времени: " + state.get("turnSecondsLeft") + " с");
+        statusLabel.setText("Статус: " + state.get("status"));
+        currentCombination = String.valueOf(state.getOrDefault("currentCombo", ""));
         renderCommunity((List<Object>) state.get("community"));
         renderPlayers((List<Object>) state.get("players"), String.valueOf(state.get("you")));
         logArea.setText(((List<Object>) state.get("log")).stream().map(String::valueOf).collect(Collectors.joining("\n")));
@@ -87,7 +104,7 @@ public final class PokerClientFrame extends JFrame {
     }
 
     public void appendStatus(String text) {
-        statusLabel.setText("Status: " + text);
+        statusLabel.setText("Статус: " + text);
     }
 
     public void setConnectEnabled(boolean enabled) {
@@ -96,11 +113,11 @@ public final class PokerClientFrame extends JFrame {
 
     private JPanel buildTopPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        panel.add(new JLabel("Host"));
+        panel.add(new JLabel("Хост"));
         panel.add(hostField);
-        panel.add(new JLabel("Port"));
+        panel.add(new JLabel("Порт"));
         panel.add(portField);
-        panel.add(new JLabel("Name"));
+        panel.add(new JLabel("Имя"));
         panel.add(nameField);
         panel.add(connectButton);
         return panel;
@@ -111,7 +128,7 @@ public final class PokerClientFrame extends JFrame {
         panel.add(buildTablePanel(), BorderLayout.CENTER);
         JScrollPane logScroll = new JScrollPane(logArea);
         logScroll.setPreferredSize(new Dimension(320, 0));
-        logScroll.setBorder(BorderFactory.createTitledBorder("Game Log"));
+        logScroll.setBorder(BorderFactory.createTitledBorder("Журнал игры"));
         panel.add(logScroll, BorderLayout.EAST);
         return panel;
     }
@@ -178,9 +195,10 @@ public final class PokerClientFrame extends JFrame {
         panel.add(checkButton);
         panel.add(callButton);
         panel.add(raiseButton);
-        panel.add(new JLabel("Raise to"));
+        panel.add(new JLabel("Рейз до"));
         panel.add(raiseSpinner);
         panel.add(allInButton);
+        panel.add(myCombinationButton);
         return panel;
     }
 
@@ -195,7 +213,7 @@ public final class PokerClientFrame extends JFrame {
                 controller.connect(host, port, name);
             } catch (NumberFormatException exception) {
                 connectButton.setEnabled(true);
-                JOptionPane.showMessageDialog(this, "Port must be a number", "Validation", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Порт должен быть числом", "Проверка", JOptionPane.WARNING_MESSAGE);
             }
         });
         foldButton.addActionListener(event -> controller.sendAction("FOLD", 0));
@@ -203,6 +221,7 @@ public final class PokerClientFrame extends JFrame {
         callButton.addActionListener(event -> controller.sendAction("CALL", 0));
         raiseButton.addActionListener(event -> controller.sendAction("RAISE", (Integer) raiseSpinner.getValue()));
         allInButton.addActionListener(event -> controller.sendAction("ALL_IN", 0));
+        myCombinationButton.addActionListener(event -> showCombinationDialog());
     }
 
     private void setActionButtonsEnabled(List<String> allowed) {
@@ -275,5 +294,53 @@ public final class PokerClientFrame extends JFrame {
                 seatPanels[seat].clear();
             }
         }
+    }
+
+    private void showCombinationDialog() {
+        JFrame dialog = new JFrame("Моя комбинация");
+        dialog.setLayout(new BorderLayout(10, 10));
+        dialog.getContentPane().setBackground(new Color(24, 94, 52));
+
+        String effectiveCombo = currentCombination == null || currentCombination.isBlank()
+                ? "Недостаточно карт"
+                : currentCombination;
+        JLabel currentLabel = new JLabel("Текущая комбинация: " + effectiveCombo);
+        currentLabel.setForeground(Color.WHITE);
+        currentLabel.setBorder(BorderFactory.createEmptyBorder(10, 10, 0, 10));
+        dialog.add(currentLabel, BorderLayout.NORTH);
+
+        JPanel listPanel = new JPanel(new GridLayout(COMBINATION_ORDER.length, 1, 4, 4));
+        listPanel.setOpaque(false);
+        for (String combination : COMBINATION_ORDER) {
+            JLabel label = new JLabel(combination);
+            label.setOpaque(true);
+            boolean selected = combination.equals(currentCombination);
+            label.setBackground(selected ? new Color(255, 215, 0) : new Color(241, 235, 221));
+            label.setForeground(selected ? new Color(76, 51, 26) : Color.BLACK);
+            label.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+            listPanel.add(label);
+        }
+
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
+        wrapper.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        wrapper.add(listPanel, BorderLayout.CENTER);
+        dialog.add(wrapper, BorderLayout.CENTER);
+
+        dialog.setSize(320, 420);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    private String translateStage(String stage) {
+        return switch (stage) {
+            case "WAITING" -> "ожидание";
+            case "PRE_FLOP" -> "префлоп";
+            case "FLOP" -> "флоп";
+            case "TURN" -> "тёрн";
+            case "RIVER" -> "ривер";
+            case "SHOWDOWN" -> "вскрытие";
+            default -> stage;
+        };
     }
 }
