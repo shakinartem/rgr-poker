@@ -33,6 +33,7 @@ public final class GameEngine {
     private String statusText = "Waiting for players";
     private String currentTurnPlayer = "";
     private long turnDeadlineMillis;
+    private final List<String> currentHandPlayers = new ArrayList<>();
     private final List<Card> deck = new ArrayList<>(52);
     private final List<Card> communityCards = new ArrayList<>(5);
 
@@ -47,6 +48,7 @@ public final class GameEngine {
             statusText = "Waiting for at least 2 players";
             currentTurnPlayer = "";
             turnDeadlineMillis = 0L;
+            currentHandPlayers.clear();
             table.broadcastState();
             return;
         }
@@ -95,6 +97,15 @@ public final class GameEngine {
         return currentBet;
     }
 
+    public synchronized int minimumRaiseTo(Player player) {
+        int minimumTarget = currentBet + Math.max(minRaise, BIG_BLIND);
+        return currentBet == 0 ? Math.max(BIG_BLIND, player.roundContribution() + BIG_BLIND) : minimumTarget;
+    }
+
+    public synchronized int maximumRaiseTo(Player player) {
+        return player.roundContribution() + player.stack();
+    }
+
     public synchronized String statusText() {
         return statusText;
     }
@@ -115,6 +126,10 @@ public final class GameEngine {
         return List.copyOf(communityCards);
     }
 
+    public synchronized boolean isCurrentHandPlayer(Player player) {
+        return currentHandPlayers.contains(player.name());
+    }
+
     private void prepareRound(List<Player> players) {
         buildDeck();
         communityCards.clear();
@@ -126,6 +141,8 @@ public final class GameEngine {
         statusText = "Pre-flop";
         currentTurnPlayer = "";
         turnDeadlineMillis = 0L;
+        currentHandPlayers.clear();
+        players.stream().map(Player::name).forEach(currentHandPlayers::add);
 
         for (Player player : players) {
             player.resetForRound();
@@ -255,6 +272,9 @@ public final class GameEngine {
                 if (toCall == 0) {
                     return false;
                 }
+                if (player.stack() > toCall && action.amount() > 0 && action.amount() != toCall) {
+                    return false;
+                }
                 int added = player.bet(toCall);
                 pot += added;
                 player.setActedThisRound(true);
@@ -337,6 +357,7 @@ public final class GameEngine {
         statusText = "Round finished";
         currentTurnPlayer = "";
         turnDeadlineMillis = 0L;
+        currentHandPlayers.clear();
     }
 
     private void finishShowdown(List<Player> players) {
@@ -376,6 +397,7 @@ public final class GameEngine {
         statusText = "Round finished";
         currentTurnPlayer = "";
         turnDeadlineMillis = 0L;
+        currentHandPlayers.clear();
     }
 
     private List<PotSlice> buildPotSlices(List<Player> players) {

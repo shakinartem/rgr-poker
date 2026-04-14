@@ -11,6 +11,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SpinnerModel;
 import javax.swing.SpinnerNumberModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -81,11 +82,16 @@ public final class PokerClientFrame extends JFrame {
         renderPlayers((List<Object>) state.get("players"), String.valueOf(state.get("you")));
         logArea.setText(((List<Object>) state.get("log")).stream().map(String::valueOf).collect(Collectors.joining("\n")));
         List<String> allowed = ((List<Object>) state.get("allowedActions")).stream().map(String::valueOf).toList();
+        updateRaiseSpinner(state, allowed);
         setActionButtonsEnabled(allowed);
     }
 
     public void appendStatus(String text) {
         statusLabel.setText("Status: " + text);
+    }
+
+    public void setConnectEnabled(boolean enabled) {
+        connectButton.setEnabled(enabled);
     }
 
     private JPanel buildTopPanel() {
@@ -185,9 +191,10 @@ public final class PokerClientFrame extends JFrame {
             String name = nameField.getText().trim();
             try {
                 int port = Integer.parseInt(portText);
-                controller.connect(host, port, name);
                 connectButton.setEnabled(false);
+                controller.connect(host, port, name);
             } catch (NumberFormatException exception) {
+                connectButton.setEnabled(true);
                 JOptionPane.showMessageDialog(this, "Port must be a number", "Validation", JOptionPane.WARNING_MESSAGE);
             }
         });
@@ -205,6 +212,21 @@ public final class PokerClientFrame extends JFrame {
         raiseButton.setEnabled(allowed.contains("RAISE"));
         allInButton.setEnabled(allowed.contains("ALL_IN"));
         raiseSpinner.setEnabled(allowed.contains("RAISE"));
+    }
+
+    private void updateRaiseSpinner(Map<String, Object> state, List<String> allowed) {
+        int minimum = ((Number) state.getOrDefault("raiseMin", 20)).intValue();
+        int maximum = ((Number) state.getOrDefault("raiseMax", 10_000)).intValue();
+        if (maximum < minimum) {
+            maximum = minimum;
+        }
+        int current = raiseSpinner.getValue() instanceof Number number ? number.intValue() : minimum;
+        int next = Math.max(minimum, Math.min(current, maximum));
+        SpinnerModel model = new SpinnerNumberModel(next, minimum, maximum, 10);
+        raiseSpinner.setModel(model);
+        if (!allowed.contains("RAISE")) {
+            raiseSpinner.setValue(minimum);
+        }
     }
 
     private void renderCommunity(List<Object> cards) {
@@ -247,6 +269,7 @@ public final class PokerClientFrame extends JFrame {
                         Boolean.TRUE.equals(player.get("folded")),
                         Boolean.TRUE.equals(player.get("allIn")),
                         Boolean.TRUE.equals(player.get("connected")),
+                        Boolean.TRUE.equals(player.get("waiting")),
                         cards);
             } else {
                 seatPanels[seat].clear();

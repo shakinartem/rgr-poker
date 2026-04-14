@@ -17,7 +17,7 @@ public final class GameTable {
     private static final Pattern NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]{3,16}$");
 
     private final List<Player> players = new CopyOnWriteArrayList<>();
-    private final List<String> logMessages = new ArrayList<>();
+    private final List<String> logMessages = new CopyOnWriteArrayList<>();
     private final GameEngine engine = new GameEngine(this);
     private final Thread gameLoop;
 
@@ -27,12 +27,13 @@ public final class GameTable {
         gameLoop.start();
     }
 
-    public synchronized Player registerPlayer(PlayerSession session, String requestedName) {
+    public Player registerPlayer(PlayerSession session, String requestedName) {
         if (!NAME_PATTERN.matcher(requestedName).matches()) {
             session.sendError("Name must match ^[a-zA-Z0-9_]{3,16}$");
             return null;
         }
-        if (players.size() >= 4) {
+        long occupiedSeats = players.stream().filter(player -> player.session().isConnected()).count();
+        if (occupiedSeats >= 4) {
             session.send(Map.of("type", Protocol.TYPE_JOIN_ERROR, "message", "Table is full"));
             return null;
         }
@@ -43,12 +44,17 @@ public final class GameTable {
         }
         Player player = new Player(requestedName, session);
         players.add(player);
-        log(player.name() + " joined the table");
+        if (engine.stage() == GameStage.WAITING) {
+            log(player.name() + " joined the table");
+        } else {
+            log(player.name() + " joined and will wait for the next round");
+            session.sendInfo("A hand is already in progress. You will join on the next round.");
+        }
         broadcastState();
         return player;
     }
 
-    public synchronized void disconnect(PlayerSession session) {
+    public void disconnect(PlayerSession session) {
         Player player = session.player();
         if (player == null) {
             return;
@@ -59,21 +65,21 @@ public final class GameTable {
         broadcastState();
     }
 
-    public synchronized List<Player> activePlayersSnapshot() {
+    public List<Player> activePlayersSnapshot() {
         return players.stream()
                 .filter(player -> player.isConnected() && player.stack() > 0)
                 .collect(Collectors.toCollection(ArrayList::new));
     }
 
-    public synchronized void log(String message) {
+    public void log(String message) {
         logMessages.add(message);
-        if (logMessages.size() > 40) {
+        while (logMessages.size() > 40) {
             logMessages.remove(0);
         }
         broadcastState();
     }
 
-    public synchronized void broadcastState() {
+    public void broadcastState() {
         for (Player viewer : players) {
             if (!viewer.session().isConnected()) {
                 continue;
@@ -83,6 +89,7 @@ public final class GameTable {
     }
 
     private Map<String, Object> buildStateFor(Player viewer) {
+        List<Player> visiblePlayers = visiblePlayersFor(viewer);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", Protocol.TYPE_STATE);
         payload.put("stage", engine.stage().name());
@@ -92,7 +99,9 @@ public final class GameTable {
         payload.put("turnSecondsLeft", engine.turnSecondsLeft());
         payload.put("status", engine.statusText());
         payload.put("community", engine.communityCardsSnapshot().stream().map(Card::code).toList());
-        payload.put("players", players.stream().map(player -> {
+        payload.put("raiseMin", engine.minimumRaiseTo(viewer));
+        payload.put("raiseMax", engine.maximumRaiseTo(viewer));
+        payload.put("players", visiblePlayers.stream().map(player -> {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("name", player.name());
             item.put("stack", player.stack());
@@ -101,6 +110,7 @@ public final class GameTable {
             item.put("folded", player.folded());
             item.put("allIn", player.allIn());
             item.put("connected", player.isConnected());
+            item.put("waiting", engine.stage() != GameStage.WAITING && !engine.isCurrentHandPlayer(player));
             boolean showCards = player == viewer || (engine.stage() == GameStage.SHOWDOWN && !player.folded());
             item.put("cards", showCards ? player.holeCards().stream().map(Card::code).toList() : List.of());
             return item;
@@ -114,6 +124,9 @@ public final class GameTable {
 
     private List<String> allowedActionsFor(Player player) {
         if (engine.stage() == GameStage.WAITING || player.folded() || player.allIn() || player.sittingOut()) {
+            return List.of();
+        }
+        if (!engine.isCurrentHandPlayer(player)) {
             return List.of();
         }
         if (!player.name().equals(engine.currentTurnPlayer())) {
@@ -134,6 +147,15 @@ public final class GameTable {
             actions.add(ActionType.ALL_IN.name());
         }
         return actions;
+    }
+
+    private List<Player> visiblePlayersFor(Player viewer) {
+        if (engine.stage() == GameStage.WAITING) {
+            return List.copyOf(players);
+        }
+        return players.stream()
+                .filter(player -> engine.isCurrentHandPlayer(player) || player == viewer)
+                .toList();
     }
 
     private void loop() {

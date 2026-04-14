@@ -35,10 +35,13 @@ public final class SeatPanel extends JPanel {
         add(cardsPanel);
     }
 
-    public void render(String name, int stack, int roundBet, boolean folded, boolean allIn, boolean connected, List<String> cards) {
+    public void render(String name, int stack, int roundBet, boolean folded, boolean allIn, boolean connected, boolean waiting, List<String> cards) {
         nameLabel.setText(name);
         stackLabel.setText("stack=" + stack + " bet=" + roundBet);
         StringBuilder state = new StringBuilder();
+        if (waiting) {
+            state.append("WAITING ");
+        }
         if (folded) {
             state.append("FOLDED ");
         }
@@ -56,7 +59,7 @@ public final class SeatPanel extends JPanel {
     }
 
     public void clear() {
-        render("Empty", 0, 0, false, false, false, List.of());
+        render("Empty", 0, 0, false, false, false, false, List.of());
     }
 
     private JLabel createCardLabel() {

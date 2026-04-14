@@ -9,7 +9,9 @@ import java.util.Map;
 
 public final class GameController {
     private final PokerClientFrame frame;
-    private final NetworkClient client = new NetworkClient();
+    private NetworkClient client;
+    private boolean transportConnected;
+    private boolean joined;
 
     public GameController(PokerClientFrame frame) {
         this.frame = frame;
@@ -17,11 +19,17 @@ public final class GameController {
 
     public void connect(String host, int port, String name) {
         try {
-            client.connect(host, port, this::handleMessage);
+            if (!transportConnected) {
+                client = new NetworkClient();
+                client.connect(host, port, this::handleMessage);
+                transportConnected = true;
+            }
             client.send(Map.of("type", Protocol.TYPE_JOIN, "name", name));
-            frame.appendStatus("Connected to " + host + ":" + port);
+            frame.appendStatus("Joining " + host + ":" + port);
         } catch (IOException exception) {
+            resetConnection();
             frame.appendStatus("Connection failed: " + exception.getMessage());
+            frame.setConnectEnabled(true);
         }
     }
 
@@ -41,12 +49,37 @@ public final class GameController {
         SwingUtilities.invokeLater(() -> {
             String type = String.valueOf(message.get("type"));
             switch (type) {
-                case Protocol.TYPE_JOIN_OK -> frame.appendStatus("Joined as " + message.get("name"));
-                case Protocol.TYPE_JOIN_ERROR, Protocol.TYPE_ERROR -> frame.appendStatus(String.valueOf(message.get("message")));
+                case Protocol.TYPE_JOIN_OK -> {
+                    joined = true;
+                    frame.appendStatus("Joined as " + message.get("name"));
+                    frame.setConnectEnabled(false);
+                }
+                case Protocol.TYPE_JOIN_ERROR -> {
+                    frame.appendStatus(String.valueOf(message.get("message")));
+                    frame.setConnectEnabled(true);
+                }
+                case Protocol.TYPE_ERROR -> {
+                    frame.appendStatus(String.valueOf(message.get("message")));
+                    if (!joined) {
+                        frame.setConnectEnabled(true);
+                    }
+                }
                 case Protocol.TYPE_INFO -> frame.appendStatus(String.valueOf(message.get("message")));
                 case Protocol.TYPE_STATE -> frame.renderState(message);
                 default -> frame.appendStatus("Unknown message: " + type);
             }
         });
+    }
+
+    private void resetConnection() {
+        joined = false;
+        transportConnected = false;
+        if (client != null) {
+            try {
+                client.close();
+            } catch (IOException ignored) {
+            }
+            client = null;
+        }
     }
 }

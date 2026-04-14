@@ -34,6 +34,10 @@ public final class Player {
         return holeCards;
     }
 
+    public boolean hasHoleCards() {
+        return !holeCards.isEmpty();
+    }
+
     public int stack() {
         return stack;
     }
